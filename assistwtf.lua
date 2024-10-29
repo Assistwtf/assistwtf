@@ -16,42 +16,26 @@ Window:AddTabLabel("Home")
 local NonBlatantTab = Window:AddTab("Non-Blatant", "earth")
 local BlatantTab = Window:AddTab("Blatant", "ads")
 
--- Non-Blatant Section (e.g., Aim features)
-local AimSection = NonBlatantTab:AddSection("Aim", "left")
-
--- Silent Aim Toggle
-AimSection:AddToggle("Silent Aim", false, function(val)
-    if val then
-        Notification:Notify("info", "Success!", "Silent aim has been enabled!")
-        -- Enable silent aim logic here
-    else
-        Notification:Notify("info", "Disabled", "Silent aim has been disabled!")
-        -- Disable silent aim logic here
-    end
-end)
-
--- Visuals Section
-local VisualsSection = NonBlatantTab:AddSection("Visuals", "right")
-VisualsSection:AddLabel("Highlight a user.")
-
--- ESP Toggle in Visuals Section
+-- Services
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
+
+-- ESP Section
 local espEnabled = false
 local espConnections = {}
 
--- Function to create rainbow color
 local function rainbowColor()
     local time = tick() * 3
     return Color3.new(math.sin(time), math.sin(time + 2), math.sin(time + 4))
 end
 
--- Function to create ESP outline
 local function createESP(player)
     if not player.Character then return end -- Ensure character exists
     local highlight = Instance.new("Highlight")
-    highlight.FillColor = Color3.new(128, 128, 128) -- Optional: set fill color (gray)
+    highlight.FillColor = Color3.new(128, 128, 128) -- Gray fill color
     highlight.OutlineColor = rainbowColor() -- Set outline color to rainbow
     highlight.OutlineTransparency = 0 -- Fully visible outline
     highlight.Parent = player.Character
@@ -74,30 +58,31 @@ local function createESP(player)
     table.insert(espConnections, connection)
 end
 
--- Function to enable or disable ESP
 local function toggleESP(enabled)
     espEnabled = enabled
     if espEnabled then
-        -- Loop through players and create ESP for each
+        -- Enable ESP for all current players
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
                 createESP(player)
             end
         end
-        
-        -- Update ESP for new players
-        Players.PlayerAdded:Connect(function(player)
-            player.CharacterAdded:Wait() -- Wait for character to load
-            createESP(player)
+
+        -- Update ESP for newly joined players only if ESP is enabled
+        espConnections[#espConnections + 1] = Players.PlayerAdded:Connect(function(player)
+            if espEnabled then
+                player.CharacterAdded:Wait() -- Wait for character to load
+                createESP(player)
+            end
         end)
     else
-        -- Disable ESP by disconnecting all connections and clearing highlights
+        -- Disconnect and destroy ESP for all players
         for _, connection in ipairs(espConnections) do
             connection:Disconnect()
         end
         espConnections = {}
-        
-        -- Destroy highlights of all players
+
+        -- Clear existing highlights
         for _, player in ipairs(Players:GetPlayers()) do
             if player.Character then
                 for _, obj in ipairs(player.Character:GetChildren()) do
@@ -108,53 +93,104 @@ local function toggleESP(enabled)
             end
         end
     end
-    Notification:Notify("info", enabled and "ESP Enabled!" or "ESP Disabled!") -- Notify user
+    Notification:Notify("info", enabled and "ESP Enabled!" or "ESP Disabled!")
 end
 
--- Add ESP toggle to the UI
+-- Non-Blatant Section
+local AimSection = NonBlatantTab:AddSection("Aim", "left")
+AimSection:AddToggle("Silent Aim", false, function(val)
+    if val then
+        Notification:Notify("info", "Success!", "Silent aim has been enabled!")
+        -- Silent aim logic here
+    else
+        Notification:Notify("info", "Disabled", "Silent aim has been disabled!")
+        -- Disable silent aim logic here
+    end
+end)
+
+-- Visuals Section (for ESP)
+local VisualsSection = NonBlatantTab:AddSection("Visuals", "right")
 VisualsSection:AddToggle("Toggle ESP", false, function(val)
     toggleESP(val)
 end)
 
--- Blatant Section (e.g., Bannable features)
+-- Add additional Non-Blatant features here
+-- Example:
+local MiscSection = NonBlatantTab:AddSection("Misc", "right")
+MiscSection:AddToggle("No Recoil", false, function(val)
+    if val then
+        Notification:Notify("info", "No Recoil Enabled", "Recoil has been disabled.")
+        -- No Recoil logic here
+    else
+        Notification:Notify("info", "No Recoil Disabled", "Recoil has been re-enabled.")
+        -- Re-enable recoil logic here
+    end
+end)
+
+-- Blatant Section (Bannable features)
 local BannableSection = BlatantTab:AddSection("Bannable", "left")
 
 -- Autokill Toggle
 BannableSection:AddToggle("Autokill", false, function(val)
     if val then
         Notification:Notify("warning", "Be careful!", "Autokill is enabled. This can get you banned!")
-        -- Enable autokill logic here
+        -- Autokill logic here
     else
         Notification:Notify("info", "Autokill Disabled", "Autokill has been disabled.")
         -- Disable autokill logic here
     end
 end)
 
--- Aimbot Toggle
+-- Aimbot Toggle with Lock-On Logic
+local aimbotEnabled = false
+local aimbotConnection
+
+local function getClosestEnemy()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Team ~= LocalPlayer.Team and player.Character and player.Character:FindFirstChild("Head") then
+            local headPosition = player.Character.Head.Position
+            local screenPoint, onScreen = Camera:WorldToViewportPoint(headPosition)
+
+            if onScreen then
+                local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)).magnitude
+                if distance < shortestDistance then
+                    closestPlayer = player
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+
+    return closestPlayer
+end
+
 BannableSection:AddToggle("Aimbot", false, function(val)
-    if val then
+    aimbotEnabled = val
+    if aimbotEnabled then
         Notification:Notify("warning", "Be careful!", "Aimbot is enabled. This can get you banned!")
-        -- Enable aimbot logic here
+        aimbotConnection = RunService.RenderStepped:Connect(function()
+            local closestEnemy = getClosestEnemy()
+            if closestEnemy and closestEnemy.Character and closestEnemy.Character:FindFirstChild("Head") then
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, closestEnemy.Character.Head.Position)
+            end
+        end)
     else
         Notification:Notify("info", "Aimbot Disabled", "Aimbot has been disabled.")
-        -- Disable aimbot logic here
+        if aimbotConnection then
+            aimbotConnection:Disconnect()
+            aimbotConnection = nil
+        end
     end
 end)
 
 -- Rejoin Button
 BannableSection:AddButton("Rejoin", function()
-    local Players = game:GetService("Players")
-    local TeleportService = game:GetService("TeleportService")
-
-    local function rejoinGame()
-        local player = Players.LocalPlayer
-        local placeId = game.PlaceId
-        local jobId = game.JobId
-
-        TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
-    end
-
-    -- Call the function to rejoin immediately
-    rejoinGame()
+    local placeId = game.PlaceId
+    local jobId = game.JobId
+    TeleportService:TeleportToPlaceInstance(placeId, jobId, LocalPlayer)
     print("Attempting to rejoin the current game...")
 end)
+
