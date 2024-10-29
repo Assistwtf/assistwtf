@@ -16,26 +16,42 @@ Window:AddTabLabel("Home")
 local NonBlatantTab = Window:AddTab("Non-Blatant", "earth")
 local BlatantTab = Window:AddTab("Blatant", "ads")
 
--- Services
+-- Non-Blatant Section (e.g., Aim features)
+local AimSection = NonBlatantTab:AddSection("Aim", "left")
+
+-- Silent Aim Toggle
+AimSection:AddToggle("Silent Aim", false, function(val)
+    if val then
+        Notification:Notify("info", "Success!", "Silent aim has been enabled!")
+        -- Enable silent aim logic here
+    else
+        Notification:Notify("info", "Disabled", "Silent aim has been disabled!")
+        -- Disable silent aim logic here
+    end
+end)
+
+-- Visuals Section
+local VisualsSection = NonBlatantTab:AddSection("Visuals", "right")
+VisualsSection:AddLabel("Highlight a user.")
+
+-- ESP Toggle in Visuals Section
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
 local RunService = game:GetService("RunService")
-local TeleportService = game:GetService("TeleportService")
-
--- ESP Section
 local espEnabled = false
 local espConnections = {}
 
+-- Function to create rainbow color
 local function rainbowColor()
     local time = tick() * 3
     return Color3.new(math.sin(time), math.sin(time + 2), math.sin(time + 4))
 end
 
+-- Function to create ESP outline
 local function createESP(player)
-    if not player.Character then return end -- Ensure character exists
+    if not player.Character or not player.Character:FindFirstChild("Head") then return end -- Ensure character and head exist
     local highlight = Instance.new("Highlight")
-    highlight.FillColor = Color3.new(128, 128, 128) -- Gray fill color
+    highlight.FillColor = Color3.new(128, 128, 128) -- Optional: set fill color (gray)
     highlight.OutlineColor = rainbowColor() -- Set outline color to rainbow
     highlight.OutlineTransparency = 0 -- Fully visible outline
     highlight.Parent = player.Character
@@ -45,44 +61,48 @@ local function createESP(player)
         highlight.Parent = character
     end)
 
-    -- Update rainbow color continuously
-    local connection = RunService.RenderStepped:Connect(function()
-        if espEnabled then
-            highlight.OutlineColor = rainbowColor()
-        else
-            connection:Disconnect()
-            highlight:Destroy()
-        end
-    end)
-
-    table.insert(espConnections, connection)
+    return highlight
 end
 
+-- Function to enable or disable ESP
 local function toggleESP(enabled)
     espEnabled = enabled
     if espEnabled then
-        -- Enable ESP for all current players
+        -- Loop through players and create ESP for each
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
                 createESP(player)
             end
         end
+        
+        -- Update ESP for new players
+        Players.PlayerAdded:Connect(function(player)
+            player.CharacterAdded:Wait() -- Wait for character to load
+            createESP(player)
+        end)
 
-        -- Update ESP for newly joined players only if ESP is enabled
-        espConnections[#espConnections + 1] = Players.PlayerAdded:Connect(function(player)
+        -- Refresh ESP every second
+        RunService.RenderStepped:Connect(function()
             if espEnabled then
-                player.CharacterAdded:Wait() -- Wait for character to load
-                createESP(player)
+                for _, player in ipairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer then
+                        local highlight = createESP(player)
+                        if highlight then
+                            highlight.OutlineColor = rainbowColor() -- Refresh the outline color
+                        end
+                    end
+                end
+                print("ESP refreshed")
             end
         end)
     else
-        -- Disconnect and destroy ESP for all players
+        -- Disable ESP by disconnecting all connections and clearing highlights
         for _, connection in ipairs(espConnections) do
             connection:Disconnect()
         end
         espConnections = {}
-
-        -- Clear existing highlights
+        
+        -- Destroy highlights of all players
         for _, player in ipairs(Players:GetPlayers()) do
             if player.Character then
                 for _, obj in ipairs(player.Character:GetChildren()) do
@@ -93,104 +113,94 @@ local function toggleESP(enabled)
             end
         end
     end
-    Notification:Notify("info", enabled and "ESP Enabled!" or "ESP Disabled!")
+    Notification:Notify("info", enabled and "ESP Enabled!" or "ESP Disabled!") -- Notify user
 end
 
--- Non-Blatant Section
-local AimSection = NonBlatantTab:AddSection("Aim", "left")
-AimSection:AddToggle("Silent Aim", false, function(val)
-    if val then
-        Notification:Notify("info", "Success!", "Silent aim has been enabled!")
-        -- Silent aim logic here
-    else
-        Notification:Notify("info", "Disabled", "Silent aim has been disabled!")
-        -- Disable silent aim logic here
-    end
-end)
-
--- Visuals Section (for ESP)
-local VisualsSection = NonBlatantTab:AddSection("Visuals", "right")
+-- Add ESP toggle to the UI
 VisualsSection:AddToggle("Toggle ESP", false, function(val)
     toggleESP(val)
 end)
 
--- Add additional Non-Blatant features here
--- Example:
-local MiscSection = NonBlatantTab:AddSection("Misc", "right")
-MiscSection:AddToggle("No Recoil", false, function(val)
-    if val then
-        Notification:Notify("info", "No Recoil Enabled", "Recoil has been disabled.")
-        -- No Recoil logic here
-    else
-        Notification:Notify("info", "No Recoil Disabled", "Recoil has been re-enabled.")
-        -- Re-enable recoil logic here
-    end
-end)
-
--- Blatant Section (Bannable features)
+-- Blatant Section (e.g., Bannable features)
 local BannableSection = BlatantTab:AddSection("Bannable", "left")
 
 -- Autokill Toggle
 BannableSection:AddToggle("Autokill", false, function(val)
     if val then
         Notification:Notify("warning", "Be careful!", "Autokill is enabled. This can get you banned!")
-        -- Autokill logic here
+        -- Enable autokill logic here
     else
         Notification:Notify("info", "Autokill Disabled", "Autokill has been disabled.")
         -- Disable autokill logic here
     end
 end)
 
--- Aimbot Toggle with Lock-On Logic
-local aimbotEnabled = false
-local aimbotConnection
+-- Aimbot Toggle
+local aimbotActive = false
+BannableSection:AddToggle("Aimbot", false, function(val)
+    aimbotActive = val
+    if aimbotActive then
+        Notification:Notify("warning", "Be careful!", "Aimbot is enabled. This can get you banned!")
+    else
+        Notification:Notify("info", "Aimbot Disabled", "Aimbot has been disabled.")
+    end
+end)
 
-local function getClosestEnemy()
-    local closestPlayer = nil
-    local shortestDistance = math.huge
+-- Aimbot Logic
+RunService.RenderStepped:Connect(function()
+    if aimbotActive then
+        local nearestPlayer = nil
+        local nearestDistance = math.huge
 
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Team ~= LocalPlayer.Team and player.Character and player.Character:FindFirstChild("Head") then
-            local headPosition = player.Character.Head.Position
-            local screenPoint, onScreen = Camera:WorldToViewportPoint(headPosition)
-
-            if onScreen then
-                local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)).magnitude
-                if distance < shortestDistance then
-                    closestPlayer = player
-                    shortestDistance = distance
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Team ~= LocalPlayer.Team and player.Character and player.Character:FindFirstChild("Head") then
+                local distance = (LocalPlayer.Character.Head.Position - player.Character.Head.Position).magnitude
+                if distance < nearestDistance then
+                    nearestDistance = distance
+                    nearestPlayer = player
                 end
             end
         end
-    end
 
-    return closestPlayer
-end
-
-BannableSection:AddToggle("Aimbot", false, function(val)
-    aimbotEnabled = val
-    if aimbotEnabled then
-        Notification:Notify("warning", "Be careful!", "Aimbot is enabled. This can get you banned!")
-        aimbotConnection = RunService.RenderStepped:Connect(function()
-            local closestEnemy = getClosestEnemy()
-            if closestEnemy and closestEnemy.Character and closestEnemy.Character:FindFirstChild("Head") then
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, closestEnemy.Character.Head.Position)
-            end
-        end)
-    else
-        Notification:Notify("info", "Aimbot Disabled", "Aimbot has been disabled.")
-        if aimbotConnection then
-            aimbotConnection:Disconnect()
-            aimbotConnection = nil
+        if nearestPlayer then
+            local headPosition = nearestPlayer.Character.Head.Position
+            local camera = workspace.CurrentCamera
+            camera.CFrame = CFrame.new(camera.CFrame.Position, headPosition)
         end
     end
+end)
+
+-- Gun Mods
+BannableSection:AddButton("Gun Mods", function()
+    local function toggleTableAttribute(attribute, value)
+        for _, gcVal in pairs(getgc(true)) do
+            if type(gcVal) == "table" and rawget(gcVal, attribute) then
+                gcVal[attribute] = value
+            end
+        end
+    end
+
+    toggleTableAttribute("ShootCooldown", 0)
+    toggleTableAttribute("ShootSpread", 0)
+    toggleTableAttribute("ShootRecoil", 0)
+
+    Notification:Notify("info", "Gun Mods Activated", "Gun modifications have been applied.")
 end)
 
 -- Rejoin Button
 BannableSection:AddButton("Rejoin", function()
-    local placeId = game.PlaceId
-    local jobId = game.JobId
-    TeleportService:TeleportToPlaceInstance(placeId, jobId, LocalPlayer)
+    local Players = game:GetService("Players")
+    local TeleportService = game:GetService("TeleportService")
+
+    local function rejoinGame()
+        local player = Players.LocalPlayer
+        local placeId = game.PlaceId
+        local jobId = game.JobId
+
+        TeleportService:TeleportToPlaceInstance(placeId, jobId, player)
+    end
+
+    -- Call the function to rejoin immediately
+    rejoinGame()
     print("Attempting to rejoin the current game...")
 end)
-
